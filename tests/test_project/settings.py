@@ -81,15 +81,20 @@ DATABASES = {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
     },
+
     "postgres": {
-        "ENGINE": "django.db.backends.postgresql_psycopg2",
-        "NAME": os.environ.get("DJANGO_DATABASE_NAME_POSTGRES", "test_project"),
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": os.path.join(BASE_DIR, "test_project_postgres.sqlite3"),
+        # "ENGINE": "django.db.backends.postgresql_psycopg2",
+        # "NAME": os.environ.get("DJANGO_DATABASE_NAME_POSTGRES", "test_project"),
         "USER": os.environ.get("DJANGO_DATABASE_USER_POSTGRES", getpass.getuser()),
         "PASSWORD": os.environ.get("DJANGO_DATABASE_PASSWORD_POSTGRES", ""),
     },
     "mysql": {
-        "ENGINE": "django.db.backends.mysql",
-        "NAME": os.environ.get("DJANGO_DATABASE_NAME_MYSQL", "test_project"),
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": os.path.join(BASE_DIR, "test_project_mysql.sqlite3"),
+        # "ENGINE": "django.db.backends.mysql",
+        # "NAME": os.environ.get("DJANGO_DATABASE_NAME_MYSQL", "test_project"),
         "USER": os.environ.get("DJANGO_DATABASE_USER_MYSQL", getpass.getuser()),
         "PASSWORD": os.environ.get("DJANGO_DATABASE_PASSWORD_MYSQL", ""),
     },
@@ -133,3 +138,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/dev/howto/static-files/
 
 STATIC_URL = "/static/"
+
+
+# Encrypted fields:
+FIELD_ENCRYPTION_KEYS = ["0f9945bf32deccd9f24b2b54bb319e12cfeafcd041f3be7c26f9ec577cbc437d"]

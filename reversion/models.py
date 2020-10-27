@@ -15,6 +15,7 @@ from django.utils.encoding import force_str
 from django.utils.functional import cached_property
 from django.utils.translation import ugettext
 from django.utils.translation import gettext_lazy as _
+from encrypted_fields.fields import EncryptedTextField
 
 from reversion.errors import RevertError
 from reversion.revisions import (_follow_relations_recursive,
@@ -215,7 +216,7 @@ class Version(models.Model):
         help_text="The serialization format used by this model.",
     )
 
-    serialized_data = models.TextField(
+    serialized_data = EncryptedTextField(
         help_text="The serialized form of this version of the model.",
     )
 

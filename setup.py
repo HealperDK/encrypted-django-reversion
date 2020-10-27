@@ -21,14 +21,14 @@ def read(filepath):
 
 
 setup(
-    name="django-reversion",
+    name="encrypted-django-reversion",
     version='.'.join(str(x) for x in __version__),
     license="BSD",
     description="An extension to the Django web framework that provides version control for model instances.",
     long_description=read('README.rst'),
-    author="Dave Hall",
-    author_email="dave@etianen.com",
-    url="http://github.com/etianen/django-reversion",
+    author="Rasmus Ravn Frost",
+    author_email="rasmus.ravn.frost@gmail.com",
+    url="http://github.com/HealperDK/encrypted-django-reversion",
     zip_safe=False,
     packages=find_packages(),
     package_data={
@@ -36,6 +36,8 @@ setup(
     cmdclass=cmdclass,
     install_requires=[
         "django>=1.11",
+        "django-searchable-encrypted-fields>=0.1",
+
     ],
     python_requires='>=3.6',
     classifiers=[
