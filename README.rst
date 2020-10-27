@@ -15,3 +15,5 @@ Requirements
 
 Installation
 ============
+add this line to your requirement.txt
+- git+git://github.com/HealperDK/encrypted-django-reversion.git#egg=encrypted-django-reversion
