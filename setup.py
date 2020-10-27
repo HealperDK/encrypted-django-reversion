@@ -37,7 +37,6 @@ setup(
     install_requires=[
         "django>=1.11",
         "django-searchable-encrypted-fields>=0.1",
-
     ],
     python_requires='>=3.6',
     classifiers=[

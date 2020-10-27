@@ -220,7 +220,7 @@ class Version(models.Model):
         help_text="The serialized form of this version of the model.",
     )
 
-    object_repr = models.TextField(
+    object_repr = EncryptedTextField(
         help_text="A string representation of the object.",
     )
 

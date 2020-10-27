@@ -2,12 +2,18 @@
 encrypted-django-reversion
 ==========================
 
-This is a forked version of https://github.com/etianen/django-reversion version 3.0.8
+This is a forked version of https://github.com/etianen/django-reversion
 
-It provides a super simple modification to the Version model changing the serialized_data field from a
-TextField into a EncryptedTextField.
+If you are using encrypted value for your models while using django-reversion the effect will be negated
+since anyone can read the json representation of the object from reversion.
+This package fixes this problem.
+It provides a super simple modification to the reversion.Version model changing the field type of:
 
-This package requires
+- serialized_data
+- object_repr
+
+from a TextField into a EncryptedTextField (from django-searchable-encrypted-fields).
+
 
 Requirements
 ============
