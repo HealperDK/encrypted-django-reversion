@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('reversion', '0001_squashed_0004_auto_20160611_1202'),
+        ('reversion', '0003_auto_20201027_1546'),
     ]
 
     operations = [
