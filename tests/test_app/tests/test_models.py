@@ -4,6 +4,7 @@ from test_app.models import (
     TestModel, TestModelRelated, TestModelParent, TestModelInline,
     TestModelNestedInline,
     TestModelInlineByNaturalKey, TestModelWithNaturalKey,
+    TestModelWithUniqueConstraint,
 )
 from test_app.tests.base import TestBase, TestModelMixin, TestModelParentMixin
 import json
@@ -317,7 +318,7 @@ class M2MTest(TestModelMixin, TestBase):
             obj.related.add(v1)
             obj.related.add(v2)
         version = Version.objects.get_for_object(obj).first()
-        self.assertEqual(set(version.field_dict["related"]), set((v1.pk, v2.pk,)))
+        self.assertEqual(set(version.field_dict["related"]), {v1.pk, v2.pk})
 
 
 class RevertTest(TestModelMixin, TestBase):
@@ -443,3 +444,17 @@ class NaturalKeyTest(TestBase):
             'test_model_id': 1,
             'id': 1,
         })
+
+
+class TransactionRollbackTest(TestBase):
+
+    def setUp(self):
+        reversion.register(TestModelWithUniqueConstraint)
+
+    def testTransactionInRollbackState(self):
+        with reversion.create_revision():
+            try:
+                TestModelWithUniqueConstraint.objects.create(name='A')
+                TestModelWithUniqueConstraint.objects.create(name='A')
+            except Exception:
+                pass

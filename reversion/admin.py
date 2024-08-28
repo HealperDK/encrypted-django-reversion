@@ -1,5 +1,5 @@
 from contextlib import contextmanager
-from django.db import models, transaction, connection
+from django.db import models, transaction, connections
 from django.contrib import admin, messages
 from django.contrib.admin import options
 from django.contrib.admin.utils import unquote, quote
@@ -10,13 +10,18 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.urls import reverse, re_path
 from django.utils.text import capfirst
 from django.utils.timezone import template_localtime
-from django.utils.translation import ugettext as _
+from django.utils.translation import gettext as _
 from django.utils.encoding import force_str
 from django.utils.formats import localize
 from reversion.errors import RevertError
 from reversion.models import Version
 from reversion.revisions import is_active, register, is_registered, set_comment, create_revision, set_user
-from reversion.views import _RollBackRevisionView
+
+
+class _RollBackRevisionView(Exception):
+
+    def __init__(self, response):
+        self.response = response
 
 
 class VersionAdmin(admin.ModelAdmin):
@@ -48,8 +53,8 @@ class VersionAdmin(admin.ModelAdmin):
     def _reversion_get_template_list(self, template_name):
         opts = self.model._meta
         return (
-            "reversion/%s/%s/%s" % (opts.app_label, opts.object_name.lower(), template_name),
-            "reversion/%s/%s" % (opts.app_label, template_name),
+            f"reversion/{opts.app_label}/{opts.object_name.lower()}/{template_name}",
+            f"reversion/{opts.app_label}/{template_name}",
             "reversion/%s" % template_name,
         )
 
@@ -111,7 +116,7 @@ class VersionAdmin(admin.ModelAdmin):
                     ):
                         fk_name = field.name
                         break
-            if fk_name and not inline_model._meta.get_field(fk_name).remote_field.is_hidden():
+            if fk_name and not inline_model._meta.get_field(fk_name).remote_field.hidden:
                 field = inline_model._meta.get_field(fk_name)
                 accessor = field.remote_field.get_accessor_name()
                 follow_field = accessor
@@ -158,7 +163,7 @@ class VersionAdmin(admin.ModelAdmin):
 
     def _reversion_revisionform_view(self, request, version, template_name, extra_context=None):
         # Check that database transactions are supported.
-        if not connection.features.uses_savepoints:
+        if not connections[version.db].features.uses_savepoints:
             raise ImproperlyConfigured("Cannot use VersionAdmin with a database that does not support savepoints.")
         # Run the view.
         try:
@@ -173,14 +178,18 @@ class VersionAdmin(admin.ModelAdmin):
                         set_comment(_("Reverted to previous version, saved on %(datetime)s") % {
                             "datetime": localize(template_localtime(version.revision.date_created)),
                         })
-                    else:
+                    elif response.status_code == 200:
                         response.template_name = template_name  # Set the template name to the correct template.
                         response.render()  # Eagerly render the response, so it's using the latest version.
                         raise _RollBackRevisionView(response)  # Raise exception to undo the transaction and revision.
+                    else:
+                        raise RevertError(_("Could not load %(object_repr)s version - not found") % {
+                            "object_repr": version.object_repr,
+                        })
         except (RevertError, models.ProtectedError) as ex:
             opts = self.model._meta
             messages.error(request, force_str(ex))
-            return redirect("{}:{}_{}_changelist".format(self.admin_site.name, opts.app_label, opts.model_name))
+            return redirect(f"{self.admin_site.name}:{opts.app_label}_{opts.model_name}_changelist")
         except _RollBackRevisionView as ex:
             return ex.response
         return response
@@ -236,7 +245,9 @@ class VersionAdmin(admin.ModelAdmin):
             raise PermissionDenied
         model = self.model
         opts = model._meta
-        deleted = self._reversion_order_version_queryset(Version.objects.get_deleted(self.model))
+        deleted = self._reversion_order_version_queryset(
+            Version.objects.get_deleted(self.model).select_related("revision")
+        )
         # Set the app name.
         request.current_app = self.admin_site.name
         # Get the rest of the context.
@@ -270,7 +281,7 @@ class VersionAdmin(admin.ModelAdmin):
             {
                 "revision": version.revision,
                 "url": reverse(
-                    "%s:%s_%s_revision" % (self.admin_site.name, opts.app_label, opts.model_name),
+                    f"{self.admin_site.name}:{opts.app_label}_{opts.model_name}_revision",
                     args=(quote(version.object_id), version.id)
                 ),
             }

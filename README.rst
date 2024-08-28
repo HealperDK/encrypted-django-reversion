@@ -1,6 +1,8 @@
 ==========================
 encrypted-django-reversion
 ==========================
+|PyPI latest| |PyPI Version| |PyPI License| |TravisCI| |Docs|
+
 
 This is a forked version of https://github.com/etianen/django-reversion
 
@@ -17,7 +19,23 @@ from a TextField into a EncryptedTextField (from django-searchable-encrypted-fie
 
 Requirements
 ============
+
+- Python 3.8 or later
+- Django 4.2 or later
 - django-searchable-encrypted-fields>=0.1
+
+Features
+========
+
+-  Roll back to any point in a model instance's history.
+-  Recover deleted model instances.
+-  Simple admin integration.
+
+Documentation
+=============
+
+Check out the latest ``django-reversion`` documentation at `Getting Started <http://django-reversion.readthedocs.io/>`_
+
 
 Installation
 ============

@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.http import HttpResponse
 from django.views.generic.base import View
 from reversion.views import create_revision, RevisionMixin
@@ -9,8 +10,9 @@ def save_obj_view(request):
 
 
 def save_obj_error_view(request):
-    TestModel.objects.create()
-    raise Exception("Boom!")
+    with transaction.atomic():
+        TestModel.objects.create()
+        raise Exception("Boom!")
 
 
 @create_revision()
@@ -21,7 +23,7 @@ def create_revision_view(request):
 class RevisionMixinView(RevisionMixin, View):
 
     def revision_request_creates_revision(self, request):
-        silent = request.META.get("HTTP_X_NOREVISION", "false") == "true"
+        silent = request.headers.get('X-Norevision', "false") == "true"
         return super().revision_request_creates_revision(request) and not silent
 
     def dispatch(self, request):

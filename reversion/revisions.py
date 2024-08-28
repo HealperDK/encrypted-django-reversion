@@ -1,11 +1,11 @@
+from contextvars import ContextVar
 from collections import namedtuple, defaultdict
 from contextlib import contextmanager
 from functools import wraps
-from threading import local
 from django.apps import apps
 from django.core import serializers
 from django.core.exceptions import ObjectDoesNotExist
-from django.db import models, transaction, router
+from django.db import models, transaction, router, connections
 from django.db.models.query import QuerySet
 from django.db.models.signals import post_save, m2m_changed
 from django.utils.encoding import force_str
@@ -34,23 +34,17 @@ _StackFrame = namedtuple("StackFrame", (
 ))
 
 
-class _Local(local):
-
-    def __init__(self):
-        self.stack = ()
-
-
-_local = _Local()
+_stack = ContextVar("reversion-stack", default=[])
 
 
 def is_active():
-    return bool(_local.stack)
+    return bool(_stack.get())
 
 
 def _current_frame():
     if not is_active():
         raise RevisionManagementError("There is no active revision for this thread")
-    return _local.stack[-1]
+    return _stack.get()[-1]
 
 
 def _copy_db_versions(db_versions):
@@ -79,16 +73,17 @@ def _push_frame(manage_manually, using):
             db_versions={using: {}},
             meta=(),
         )
-    _local.stack += (stack_frame,)
+    _stack.set(_stack.get() + [stack_frame])
 
 
 def _update_frame(**kwargs):
-    _local.stack = _local.stack[:-1] + (_current_frame()._replace(**kwargs),)
+    _stack.get()[-1] = _current_frame()._replace(**kwargs)
 
 
 def _pop_frame():
     prev_frame = _current_frame()
-    _local.stack = _local.stack[:-1]
+    stack = _stack.get()
+    del stack[-1]
     if is_active():
         current_frame = _current_frame()
         db_versions = {
@@ -147,8 +142,7 @@ def _follow_relations(obj):
         if isinstance(follow_obj, models.Model):
             yield follow_obj
         elif isinstance(follow_obj, (models.Manager, QuerySet)):
-            for follow_obj_instance in follow_obj.all():
-                yield follow_obj_instance
+            yield from follow_obj.all()
         elif follow_obj is not None:
             raise RegistrationError("{name}.{follow_name} should be a Model or QuerySet".format(
                 name=obj.__class__.__name__,
@@ -217,6 +211,7 @@ def add_to_revision(obj, model_db=None):
 
 def _save_revision(versions, user=None, comment="", meta=(), date_created=None, using=None):
     from reversion.models import Revision
+    from reversion.models import Version
     # Only save versions that exist in the database.
     # Use _base_manager so we don't have problems when _default_manager is overriden
     model_db_pks = defaultdict(lambda: defaultdict(set))
@@ -254,9 +249,17 @@ def _save_revision(versions, user=None, comment="", meta=(), date_created=None, 
     # Save the revision.
     revision.save(using=using)
     # Save version models.
+
+    can_use_bulk_create = connections[using].features.can_return_rows_from_bulk_insert
+
     for version in versions:
         version.revision = revision
-        version.save(using=using)
+        if not can_use_bulk_create:
+            version.save(using=using)
+
+    if can_use_bulk_create:
+        Version.objects.using(using).bulk_create(versions)
+
     # Save the meta information.
     for meta_model, meta_fields in meta:
         meta_model._base_manager.db_manager(using=using).create(
@@ -283,8 +286,15 @@ def _create_revision_context(manage_manually, using, atomic):
         _push_frame(manage_manually, using)
         try:
             yield
+            if transaction.get_connection(using).in_atomic_block and transaction.get_rollback(using):
+                # Transaction is in invalid state due to catched exception within yield statement.
+                # Do not try to create Revision, otherwise it would lead to the transaction management error.
+                #
+                # Atomic block could be called manually around `create_revision` context manager.
+                # That's why we have to check connection flag instead of `atomic` variable value.
+                return
             # Only save for a db if that's the last stack frame for that db.
-            if not any(using in frame.db_versions for frame in _local.stack[:-1]):
+            if not any(using in frame.db_versions for frame in _stack.get()[:-1]):
                 current_frame = _current_frame()
                 _save_revision(
                     versions=current_frame.db_versions[using].values(),
@@ -304,7 +314,7 @@ def create_revision(manage_manually=False, using=None, atomic=True):
     return _ContextWrapper(_create_revision_context, (manage_manually, using, atomic))
 
 
-class _ContextWrapper(object):
+class _ContextWrapper:
 
     def __init__(self, func, args):
         self._func = func
