@@ -1,6 +1,8 @@
 from collections import defaultdict
 from itertools import chain, groupby
+import logging
 
+import django
 from django.apps import apps
 from django.conf import settings
 from django.contrib.contenttypes.fields import GenericForeignKey
@@ -13,13 +15,16 @@ from django.db.models.deletion import Collector
 from django.db.models.functions import Cast
 from django.utils.encoding import force_str
 from django.utils.functional import cached_property
-from django.utils.translation import ugettext
+from django.utils.translation import gettext
 from django.utils.translation import gettext_lazy as _
 from encrypted_fields.fields import EncryptedTextField
 
 from reversion.errors import RevertError
 from reversion.revisions import (_follow_relations_recursive,
                                  _get_content_type, _get_options)
+
+
+logger = logging.getLogger(__name__)
 
 
 def _safe_revert(versions):
@@ -29,9 +34,10 @@ def _safe_revert(versions):
             with transaction.atomic(using=version.db):
                 version.revert()
         except (IntegrityError, ObjectDoesNotExist):
+            logger.warning(f'Could not revert to {version}', exc_info=True)
             unreverted_versions.append(version)
     if len(unreverted_versions) == len(versions):
-        raise RevertError(ugettext("Could not save %(object_repr)s version - missing dependency.") % {
+        raise RevertError(gettext("Could not save %(object_repr)s version - missing dependency.") % {
             "object_repr": unreverted_versions[0],
         })
     if unreverted_versions:
@@ -108,6 +114,8 @@ class Revision(models.Model):
         return ", ".join(force_str(version) for version in self.version_set.all())
 
     class Meta:
+        verbose_name = _('revision')
+        verbose_name_plural = _('revisions')
         app_label = "reversion"
         ordering = ("-pk",)
 
@@ -134,20 +142,51 @@ class VersionQuerySet(models.QuerySet):
         model_db = model_db or router.db_for_write(model)
         connection = connections[self.db]
         if self.db == model_db and connection.vendor in ("sqlite", "postgresql", "oracle"):
-            model_qs = (
-                model._default_manager
-                .using(model_db)
-                .annotate(_pk_to_object_id=Cast("pk", Version._meta.get_field("object_id")))
-                .filter(_pk_to_object_id=models.OuterRef("object_id"))
-            )
-            subquery = (
-                self.get_for_model(model, model_db=model_db)
-                .annotate(pk_not_exists=~models.Exists(model_qs))
-                .filter(pk_not_exists=True)
-                .values("object_id")
-                .annotate(latest_pk=models.Max("pk"))
-                .values("latest_pk")
-            )
+            pk_field_name = model._meta.pk.name
+            object_id_cast_target = model._meta.get_field(pk_field_name)
+            if django.VERSION >= (2, 1):
+                # django 2.0 contains a critical bug that doesn't allow the code below to work,
+                # fallback to casting primary keys then
+                # see https://code.djangoproject.com/ticket/29142
+                if django.VERSION < (2, 2):
+                    # properly cast autofields for django before 2.2 as it was fixed in django itself later
+                    # see https://github.com/django/django/commit/ac25dd1f8d48accc765c05aebb47c427e51f3255
+                    object_id_cast_target = {
+                        "AutoField": models.IntegerField(),
+                        "BigAutoField": models.BigIntegerField(),
+                    }.get(object_id_cast_target.__class__.__name__, object_id_cast_target)
+                casted_object_id = Cast(models.OuterRef("object_id"), object_id_cast_target)
+                model_qs = (
+                    model._default_manager
+                    .using(model_db)
+                    .filter(**{pk_field_name: casted_object_id})
+                )
+            else:
+                model_qs = (
+                    model._default_manager
+                    .using(model_db)
+                    .annotate(_pk_to_object_id=Cast("pk", Version._meta.get_field("object_id")))
+                    .filter(_pk_to_object_id=models.OuterRef("object_id"))
+                )
+            # conditional expressions are being supported since django 3.0
+            # DISTINCT ON works only for Postgres DB
+            if connection.vendor == "postgresql" and django.VERSION >= (3, 0):
+                subquery = (
+                    self.get_for_model(model, model_db=model_db)
+                    .filter(~models.Exists(model_qs))
+                    .order_by("object_id", "-pk")
+                    .distinct("object_id")
+                    .values("pk")
+                )
+            else:
+                subquery = (
+                    self.get_for_model(model, model_db=model_db)
+                    .annotate(pk_not_exists=~models.Exists(model_qs))
+                    .filter(pk_not_exists=True)
+                    .values("object_id")
+                    .annotate(latest_pk=models.Max("pk"))
+                    .values("latest_pk")
+                )
         else:
             # We have to use a slow subquery.
             subquery = self.get_for_model(model, model_db=model_db).exclude(
@@ -158,7 +197,8 @@ class VersionQuerySet(models.QuerySet):
                 latest_pk=models.Max("pk")
             ).order_by().values_list("latest_pk", flat=True)
         # Perform the subquery.
-        return self.filter(pk__in=subquery)
+        # Filter by model to reduce query execution time.
+        return self.get_for_model(model, model_db=model_db).filter(pk__in=subquery)
 
     def get_unique(self):
         last_key = None
@@ -233,11 +273,11 @@ class Version(models.Model):
             return list(serializers.deserialize(self.format, data, ignorenonexistent=True,
                         use_natural_foreign_keys=version_options.use_natural_foreign_keys))[0]
         except DeserializationError:
-            raise RevertError(ugettext("Could not load %(object_repr)s version - incompatible version data.") % {
+            raise RevertError(gettext("Could not load %(object_repr)s version - incompatible version data.") % {
                 "object_repr": self.object_repr,
             })
         except serializers.SerializerDoesNotExist:
-            raise RevertError(ugettext("Could not load %(object_repr)s version - unknown serializer %(format)s.") % {
+            raise RevertError(gettext("Could not load %(object_repr)s version - unknown serializer %(format)s.") % {
                 "object_repr": self.object_repr,
                 "format": self.format,
             })
@@ -293,9 +333,16 @@ class Version(models.Model):
         return self.object_repr
 
     class Meta:
+        verbose_name = _('version')
+        verbose_name_plural = _('versions')
         app_label = 'reversion'
         unique_together = (
             ("db", "content_type", "object_id", "revision"),
+        )
+        indexes = (
+            models.Index(
+                fields=["content_type", "db"]
+            ),
         )
         ordering = ("-pk",)
 
@@ -329,25 +376,25 @@ def _safe_subquery(method, left_query, left_field_name, right_subquery, right_fi
         )
     ):
         return getattr(left_query, method)(**{
-            "{}__in".format(left_field_name): list(right_subquery.iterator()),
+            f"{left_field_name}__in": list(right_subquery.iterator()),
         })
     else:
         # If the left hand side is not a text field, we need to cast it.
         if not isinstance(left_field, (models.CharField, models.TextField)):
-            left_field_name_str = "{}_str".format(left_field_name)
+            left_field_name_str = f"{left_field_name}_str"
             left_query = left_query.annotate(**{
                 left_field_name_str: _Str(left_field_name),
             })
             left_field_name = left_field_name_str
         # If the right hand side is not a text field, we need to cast it.
         if not isinstance(right_field, (models.CharField, models.TextField)):
-            right_field_name_str = "{}_str".format(right_field_name)
+            right_field_name_str = f"{right_field_name}_str"
             right_subquery = right_subquery.annotate(**{
                 right_field_name_str: _Str(right_field_name),
             }).values_list(right_field_name_str, flat=True)
             right_field_name = right_field_name_str
         # Use Exists if running on the same DB, it is much much faster
-        exist_annotation_name = "{}_annotation_str".format(right_subquery.model._meta.db_table)
+        exist_annotation_name = f"{right_subquery.model._meta.db_table}_annotation_str"
         right_subquery = right_subquery.filter(**{right_field_name: models.OuterRef(left_field_name)})
         left_query = left_query.annotate(**{exist_annotation_name: models.Exists(right_subquery)})
         return getattr(left_query, method)(**{exist_annotation_name: True})

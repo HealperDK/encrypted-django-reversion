@@ -1,10 +1,11 @@
-from setuptools import setup, find_packages
-from reversion import __version__
+from setuptools import find_packages, setup
 
+from reversion import __version__
 
 # Load in babel support, if available.
 try:
     from babel.messages import frontend as babel
+
     cmdclass = {
         "compile_catalog": babel.compile_catalog,
         "extract_messages": babel.extract_messages,
@@ -16,13 +17,13 @@ except ImportError:
 
 
 def read(filepath):
-    with open(filepath, "r", encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8") as f:
         return f.read()
 
 
 setup(
     name="encrypted-django-reversion",
-    version='.'.join(str(x) for x in __version__),
+    version=".".join(str(x) for x in __version__),
     license="BSD",
     description="An extension to the Django web framework that provides version control for model instances.",
     long_description=read('README.rst'),
@@ -32,13 +33,14 @@ setup(
     zip_safe=False,
     packages=find_packages(),
     package_data={
-        "reversion": ["locale/*/LC_MESSAGES/django.*", "templates/reversion/*.html"]},
+        "reversion": ["locale/*/LC_MESSAGES/django.*", "templates/reversion/*.html"]
+    },
     cmdclass=cmdclass,
     install_requires=[
-        "django>=1.11",
+        "django>=4.2",
         "django-searchable-encrypted-fields>=0.1",
     ],
-    python_requires='>=3.6',
+    python_requires=">=3.8",
     classifiers=[
         "Development Status :: 5 - Production/Stable",
         "Environment :: Web Environment",
@@ -46,9 +48,11 @@ setup(
         "License :: OSI Approved :: BSD License",
         "Operating System :: OS Independent",
         "Programming Language :: Python",
-        'Programming Language :: Python :: 3.6',
-        'Programming Language :: Python :: 3.7',
-        'Programming Language :: Python :: 3.8',
+        "Programming Language :: Python :: 3.8",
+        "Programming Language :: Python :: 3.9",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python :: 3.11",
+        "Programming Language :: Python :: 3.12",
         "Framework :: Django",
-    ]
+    ],
 )

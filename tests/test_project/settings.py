@@ -81,25 +81,28 @@ DATABASES = {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": os.path.join(BASE_DIR, "db.sqlite3"),
     },
-
     "postgres": {
+        "HOST": os.environ.get("DJANGO_DATABASE_HOST_POSTGRES", ""),
         "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.path.join(BASE_DIR, "test_project_postgres.sqlite3"),
         # "ENGINE": "django.db.backends.postgresql_psycopg2",
+        "NAME": os.path.join(BASE_DIR, "test_project_postgres.sqlite3"),
         # "NAME": os.environ.get("DJANGO_DATABASE_NAME_POSTGRES", "test_project"),
         "USER": os.environ.get("DJANGO_DATABASE_USER_POSTGRES", getpass.getuser()),
         "PASSWORD": os.environ.get("DJANGO_DATABASE_PASSWORD_POSTGRES", ""),
     },
     "mysql": {
-        "ENGINE": "django.db.backends.sqlite3",
-        "NAME": os.path.join(BASE_DIR, "test_project_mysql.sqlite3"),
         # "ENGINE": "django.db.backends.mysql",
         # "NAME": os.environ.get("DJANGO_DATABASE_NAME_MYSQL", "test_project"),
+        "ENGINE": "django.db.backends.sqlite3",
+        "NAME": os.path.join(BASE_DIR, "test_project_mysql.sqlite3"),
+
+        "HOST": os.environ.get("DJANGO_DATABASE_HOST_MYSQL", ""),
         "USER": os.environ.get("DJANGO_DATABASE_USER_MYSQL", getpass.getuser()),
         "PASSWORD": os.environ.get("DJANGO_DATABASE_PASSWORD_MYSQL", ""),
     },
 }
 
+DEFAULT_AUTO_FIELD = "django.db.models.AutoField"
 
 # Password validation
 # https://docs.djangoproject.com/en/dev/ref/settings/#auth-password-validators
